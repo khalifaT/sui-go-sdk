@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+
 	"github.com/block-vision/sui-go-sdk/common/httpconn"
 	"github.com/block-vision/sui-go-sdk/models"
 	"github.com/tidwall/gjson"
@@ -14,6 +16,7 @@ type IReadObjectFromSuiAPI interface {
 	GetObjectsOwnedByAddress(ctx context.Context, req models.GetObjectsOwnedByAddressRequest, opts ...interface{}) (models.GetObjectsOwnedByAddressResponse, error)
 	GetObjectsOwnedByObject(ctx context.Context, req models.GetObjectsOwnedByObjectRequest, opts ...interface{}) (models.GetObjectsOwnedByObjectResponse, error)
 	GetRawObject(ctx context.Context, req models.GetRawObjectRequest, opts ...interface{}) (models.GetRawObjectResponse, error)
+	GetBalance(ctx context.Context, Address string) (uint64, error)
 }
 
 type suiReadObjectFromSuiImpl struct {
@@ -110,4 +113,36 @@ func (s *suiReadObjectFromSuiImpl) GetRawObject(ctx context.Context, req models.
 		return models.GetRawObjectResponse{}, err
 	}
 	return rsp, nil
+}
+
+func (s *suiReadObjectFromSuiImpl) GetBalance(ctx context.Context, address string) (uint64, error) {
+	balance := float64(0)
+	req := models.GetObjectsOwnedByAddressRequest{
+		Address: address,
+	}
+	resp, err := s.GetObjectsOwnedByAddress(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	for _, object := range resp.Result {
+		if object.Type == "0x2::coin::Coin<0x2::sui::SUI>" {
+
+			objectReq := models.GetObjectRequest{
+				ObjectID: object.ObjectId,
+			}
+			objResp, err := s.GetObject(ctx, objectReq)
+			if err != nil {
+				return 0, err
+			}
+			objectBalance, ok := objResp.Details.Data.Fields["balance"].(float64)
+			if ok {
+				balance = balance + objectBalance
+			} else {
+				return 0, fmt.Errorf("unable to get the balance of object:%s", object.ObjectId)
+			}
+
+		}
+
+	}
+	return uint64(balance), nil
 }
